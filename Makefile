@@ -38,6 +38,8 @@ ICONDIR ?= $(DATADIR)/icons/hicolor/scalable/apps
 METAINFODIR ?= $(DATADIR)/metainfo
 DIST_DIR := dist
 PACKAGE_NAME := $(BIN)-$(VERSION)-$(TARGET)
+WIN32_INSTALLER_NAME := $(BIN)-$(VERSION)-win32-setup.exe
+WIN32_INSTALLER := $(DIST_DIR)/$(WIN32_INSTALLER_NAME)
 PKG_CONFIG ?= pkg-config
 WIN32_PKG_CONFIG ?=
 SDL_PREFIX ?=
@@ -87,7 +89,7 @@ C_OBJ := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRC))
 OBJ := $(C_OBJ) $(RES_OBJ)
 DEP := $(C_OBJ:.o=.d)
 
-.PHONY: all clean run smoke render-test audio-test screenshot-test input-test settings-test cli-test simulate help version test sdl2-win32 sdl2-win32-clean win32-vendored-package-check win32-vendored-wine-package-run-check win32-vendored-release-check win32-model-check win32-model-run-check win32-resource-check win32-dry-run win32-package-layout-check win32-wine-package-run-check win32-sdl-probe win32-sdl-probe-check win32-sdl-release-check docs-check ci-check version-check verify release-check clean-release-check metadata-check install install-check uninstall uninstall-check package package-check package-run-check check-sdl FORCE
+.PHONY: all clean run smoke render-test audio-test screenshot-test input-test settings-test cli-test simulate help version test sdl2-win32 sdl2-win32-clean win32-vendored-package-check win32-vendored-wine-package-run-check win32-vendored-release-check win32-model-check win32-model-run-check win32-resource-check win32-dry-run win32-package-layout-check win32-wine-package-run-check win32-sdl-probe win32-sdl-probe-check win32-sdl-release-check docs-check ci-check version-check verify release-check clean-release-check metadata-check install install-check uninstall uninstall-check package package-check package-installer package-installer-check package-run-check check-sdl FORCE
 
 all: $(EXE)
 
@@ -131,10 +133,23 @@ $(BUILD_DIR)/nightshift.rc: packaging/nightshift.rc.in $(BUILD_DIR)/nightshift.m
 $(BUILD_DIR)/nightshift.res.o: $(BUILD_DIR)/nightshift.rc | $(BUILD_DIR)
 	$(WINDRES) -O coff -o $@ $<
 
+$(BUILD_DIR)/nightshift-installer.rc: packaging/nightshift_installer.rc.in $(BUILD_DIR)/nightshift.manifest $(BUILD_DIR)/nightshift.ico package FORCE | $(BUILD_DIR)
+	sed -e 's/@VERSION@/$(VERSION)/g' -e 's/@VERSION_COMMA@/$(VERSION_COMMA)/g' -e 's|@MANIFEST@|$(BUILD_DIR)/nightshift.manifest|g' -e 's|@ICON@|$(BUILD_DIR)/nightshift.ico|g' -e 's|@PACKAGE_DIR@|$(DIST_DIR)/$(PACKAGE_NAME)|g' $< > $@.tmp
+	if ! cmp -s $@.tmp $@; then mv $@.tmp $@; else rm $@.tmp; fi
+
+$(BUILD_DIR)/nightshift-installer.res.o: $(BUILD_DIR)/nightshift-installer.rc package FORCE | $(BUILD_DIR)
+	$(WINDRES) -O coff -o $@ $<
+
+$(WIN32_INSTALLER): tools/nightshift_installer.c $(BUILD_DIR)/nightshift-installer.res.o FORCE | $(DIST_DIR)
+	$(CC) -DNIGHTSHIFT_VERSION=\"$(VERSION)\" $(CFLAGS) -std=$(CSTD) $(WARNINGS) -o $@ tools/nightshift_installer.c $(BUILD_DIR)/nightshift-installer.res.o -mwindows -lshell32 -lole32 -luuid
+
 $(BUILD_DIR):
 	mkdir -p $@
 
 build:
+	mkdir -p $@
+
+$(DIST_DIR):
 	mkdir -p $@
 
 run: $(EXE)
@@ -247,13 +262,13 @@ sdl2-win32-clean:
 	rm -rf "$(SDL2_WIN32_BUILD_DIR)" "$(SDL2_WIN32_PREFIX)"
 
 win32-vendored-package-check: sdl2-win32
-	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" SDL_PREFIX="$(SDL2_WIN32_PREFIX)" package-check
+	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" SDL_PREFIX="$(SDL2_WIN32_PREFIX)" package-check package-installer-check
 
 win32-vendored-wine-package-run-check: sdl2-win32
 	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" SDL_PREFIX="$(SDL2_WIN32_PREFIX)" win32-wine-package-run-check
 
 win32-vendored-release-check: sdl2-win32
-	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" SDL_PREFIX="$(SDL2_WIN32_PREFIX)" win32-sdl-probe-check package-check win32-wine-package-run-check
+	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" SDL_PREFIX="$(SDL2_WIN32_PREFIX)" win32-sdl-probe-check package-check package-installer-check win32-wine-package-run-check
 
 win32-model-check: $(VERSION_HEADER) | build
 	$(WIN32_CC) $(CPPFLAGS) $(CFLAGS) -std=$(CSTD) $(WARNINGS) -o $(WIN32_MODEL_BIN) tests/test_game.c src/game.c -lm
@@ -286,6 +301,7 @@ win32-dry-run:
 	grep -q "nightshift.exe" "$$tmp/dry-run.log"; \
 	grep -q "SDL2.dll" "$$tmp/dry-run.log"; \
 	grep -q ".zip" "$$tmp/dry-run.log"; \
+	grep -q "package-installer-check" "$$tmp/dry-run.log"; \
 	grep -q "unzip -q" "$$tmp/dry-run.log"; \
 	grep -q -- "--settings-test" "$$tmp/dry-run.log"; \
 	grep -q "package-run-check" "$$tmp/dry-run.log"; \
@@ -320,22 +336,11 @@ win32-package-layout-check: $(ZIP_TOOL)
 	cp LICENSE "$$tmp/dist/$$pkg/LICENSE"; \
 	printf '%s\n' "Name: Night Shift" "Version: $(VERSION)" "Target: win32" "Executable: $(BIN).exe" "Runtime: SDL2" "Docs: README.md HOW_TO_PLAY.md WINDOWS.txt LICENSE" "Package: $$pkg" > "$$tmp/dist/$$pkg/PACKAGE.txt"; \
 	chmod +x "$$tmp/dist/$$pkg/$(BIN).exe"; \
-	tar -czf "$$tmp/dist/$$pkg.tar.gz" -C "$$tmp/dist" "$$pkg"; \
 	$(ZIP_TOOL) "$$tmp/dist/$$pkg.zip" "$$tmp/dist/$$pkg" "$(BIN).exe" "SDL2.dll" "README.md" "HOW_TO_PLAY.md" "WINDOWS.txt" "LICENSE" "PACKAGE.txt"; \
-	cd "$$tmp/dist" && sha256sum "$$pkg.tar.gz" > "$$pkg.tar.gz.sha256"; \
 	cd "$$tmp/dist" && sha256sum "$$pkg.zip" > "$$pkg.zip.sha256"; \
-	cd "$$tmp/dist" && sha256sum -c "$$pkg.tar.gz.sha256"; \
 	cd "$$tmp/dist" && sha256sum -c "$$pkg.zip.sha256"; \
-	tar -tzf "$$tmp/dist/$$pkg.tar.gz" > "$$tmp/package.lst"; \
 	unzip -Z1 "$$tmp/dist/$$pkg.zip" > "$$tmp/package-zip.lst"; \
 	unzip -t "$$tmp/dist/$$pkg.zip" >/dev/null; \
-	grep -q "^$$pkg/$(BIN).exe$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/SDL2.dll$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/README.md$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/HOW_TO_PLAY.md$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/WINDOWS.txt$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/LICENSE$$" "$$tmp/package.lst"; \
-	grep -q "^$$pkg/PACKAGE.txt$$" "$$tmp/package.lst"; \
 	grep -q "^$(BIN).exe$$" "$$tmp/package-zip.lst"; \
 	grep -q "^SDL2.dll$$" "$$tmp/package-zip.lst"; \
 	grep -q "^README.md$$" "$$tmp/package-zip.lst"; \
@@ -347,28 +352,14 @@ win32-package-layout-check: $(ZIP_TOOL)
 		printf '%s\n' 'win32 zip package contains generated, local state, or temporary files'; \
 		exit 1; \
 	fi; \
-	if grep -Eq '(^|/)(build|dist)/|\.tmp$$|\.save$$|\.cfg$$|\.bmp$$|\.o$$|\.res$$|\.res\.o$$' "$$tmp/package.lst"; then \
-		printf '%s\n' 'win32 package contains generated, local state, or temporary files'; \
-		exit 1; \
-	fi; \
-	mkdir -p "$$tmp/extract"; \
-	tar -xzf "$$tmp/dist/$$pkg.tar.gz" -C "$$tmp/extract"; \
-	test -x "$$tmp/extract/$$pkg/$(BIN).exe"; \
-	test -s "$$tmp/extract/$$pkg/SDL2.dll"; \
-	test -s "$$tmp/extract/$$pkg/README.md"; \
-	test -s "$$tmp/extract/$$pkg/HOW_TO_PLAY.md"; \
-	test -s "$$tmp/extract/$$pkg/WINDOWS.txt"; \
-	test -s "$$tmp/extract/$$pkg/LICENSE"; \
-	grep -q "SDL2.dll" "$$tmp/extract/$$pkg/WINDOWS.txt"; \
-	grep -q "nightshift.exe" "$$tmp/extract/$$pkg/WINDOWS.txt"; \
 	mkdir -p "$$tmp/zip-extract"; \
 	unzip -q "$$tmp/dist/$$pkg.zip" -d "$$tmp/zip-extract"; \
 	test -x "$$tmp/zip-extract/$(BIN).exe"; \
 	test -s "$$tmp/zip-extract/SDL2.dll"; \
 	test -s "$$tmp/zip-extract/WINDOWS.txt"; \
 	grep -q "SDL2.dll" "$$tmp/zip-extract/WINDOWS.txt"; \
-	grep -q "^Target: win32$$" "$$tmp/extract/$$pkg/PACKAGE.txt"; \
-	grep -q "^Executable: $(BIN).exe$$" "$$tmp/extract/$$pkg/PACKAGE.txt"; \
+	grep -q "^Target: win32$$" "$$tmp/zip-extract/PACKAGE.txt"; \
+	grep -q "^Executable: $(BIN).exe$$" "$$tmp/zip-extract/PACKAGE.txt"; \
 	printf '%s\n' "win32_package_layout=pass"
 
 win32-wine-package-run-check: package
@@ -376,13 +367,9 @@ ifeq ($(TARGET),win32)
 	@if command -v "$(WINE)" >/dev/null 2>&1 && WINEPREFIX="$(WINEPREFIX_DIR)" "$(WINE)" --version >/dev/null 2>&1; then \
 		set -e; tmp=$$(mktemp -d /tmp/nightshift-win32-wine.XXXXXX); \
 		trap 'rm -rf "$$tmp"' EXIT; \
-		mkdir -p "$$tmp/tar" "$$tmp/zip"; \
-		tar -xzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" -C "$$tmp/tar"; \
+		mkdir -p "$$tmp/zip"; \
 		unzip -q "$(DIST_DIR)/$(PACKAGE_NAME).zip" -d "$$tmp/zip"; \
-		test -s "$$tmp/tar/$(PACKAGE_NAME)/SDL2.dll"; \
 		test -s "$$tmp/zip/SDL2.dll"; \
-		WINEPREFIX="$(WINEPREFIX_DIR)" WINEDLLOVERRIDES=mscoree,mshtml= "$(WINE)" "$$tmp/tar/$(PACKAGE_NAME)/$(EXE)" --version | tr -d '\r' | grep -q "^Night Shift $(VERSION)$$"; \
-		WINEPREFIX="$(WINEPREFIX_DIR)" WINEDLLOVERRIDES=mscoree,mshtml= "$(WINE)" "$$tmp/tar/$(PACKAGE_NAME)/$(EXE)" --help | tr -d '\r' | grep -q "^Usage:"; \
 		WINEPREFIX="$(WINEPREFIX_DIR)" WINEDLLOVERRIDES=mscoree,mshtml= "$(WINE)" "$$tmp/zip/$(EXE)" --version | tr -d '\r' | grep -q "^Night Shift $(VERSION)$$"; \
 		WINEPREFIX="$(WINEPREFIX_DIR)" WINEDLLOVERRIDES=mscoree,mshtml= "$(WINE)" "$$tmp/zip/$(EXE)" --help | tr -d '\r' | grep -q "^Usage:"; \
 		SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy WINEPREFIX="$(WINEPREFIX_DIR)" WINEDLLOVERRIDES=mscoree,mshtml= "$(WINE)" "$$tmp/zip/$(EXE)" --render-test --save=Z:/tmp/nightshift-wine-render.save --settings=Z:/tmp/nightshift-wine-render.cfg | tr -d '\r' | grep -q "^render_test=pass"; \
@@ -415,7 +402,7 @@ win32-sdl-probe-check: check-sdl
 	printf '%s\n' "win32_sdl_probe=pass cc=$(CC) dll=$(PACKAGE_SDL_DLL)"
 
 win32-sdl-release-check:
-	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" WIN32_PKG_CONFIG="$(WIN32_PKG_CONFIG)" SDL_PREFIX="$(SDL_PREFIX)" SDL_DLL="$(SDL_DLL)" win32-sdl-probe-check verify package-check package-run-check
+	$(MAKE) TARGET=win32 CC="$(WIN32_CC)" WIN32_PKG_CONFIG="$(WIN32_PKG_CONFIG)" SDL_PREFIX="$(SDL_PREFIX)" SDL_DLL="$(SDL_DLL)" win32-sdl-probe-check verify package-check package-installer-check package-run-check
 
 verify: all test simulate help version input-test settings-test cli-test render-test audio-test screenshot-test smoke metadata-check install-check uninstall-check
 
@@ -449,10 +436,16 @@ docs-check:
 	grep -q "nightshift.save" HOW_TO_PLAY.md
 	grep -q "WINDOWS.txt" README.md
 	grep -q "win32.zip" README.md
-	grep -q "from both Win32 archives" README.md
+	grep -q "win32-setup.exe" README.md
+	grep -Eq "no Win32 .*tar.gz.* is generated" README.md
+	grep -q "Browse button" README.md
+	grep -q "/S /D=C" README.md
+	grep -q "make TARGET=win32 CC=x86_64-w64-mingw32-gcc package-installer" README.md
 	grep -q "native Windows PowerShell" README.md
 	test -s tools/make_zip.c
+	test -s tools/nightshift_installer.c
 	test -s packaging/WINDOWS.txt
+	test -s packaging/nightshift_installer.rc.in
 	grep -q "SDL2.dll" packaging/WINDOWS.txt
 	grep -q "nightshift.exe" packaging/WINDOWS.txt
 
@@ -466,9 +459,12 @@ ci-check:
 	grep -q "nightshift-unix" .github/workflows/ci.yml
 	grep -q "nightshift-win32" .github/workflows/ci.yml
 	grep -q "dist/nightshift-\\*-win32.zip" .github/workflows/ci.yml
+	grep -q "dist/nightshift-\\*-win32-setup.exe" .github/workflows/ci.yml
 	grep -q "Verify Win32 artifacts" .github/workflows/ci.yml
 	grep -q "sha256sum -c nightshift-\\*-win32.zip.sha256" .github/workflows/ci.yml
+	grep -q "sha256sum -c nightshift-\\*-win32-setup.exe.sha256" .github/workflows/ci.yml
 	grep -q "unzip -Z1 nightshift-\\*-win32.zip" .github/workflows/ci.yml
+	@if grep -Eq "win32.*tar[.]gz" .github/workflows/ci.yml; then printf '%s\n' 'CI should not publish Win32 tarballs'; exit 1; fi
 	grep -q "Native Win32 package run" .github/workflows/ci.yml
 	grep -q "Expand-Archive" .github/workflows/ci.yml
 	grep -q "Night Shift 0.1.0" .github/workflows/ci.yml
@@ -602,19 +598,45 @@ ifeq ($(TARGET),win32)
 	cp packaging/WINDOWS.txt "$(DIST_DIR)/$(PACKAGE_NAME)/WINDOWS.txt"
 	if [ -n "$(PACKAGE_SDL_DLL)" ] && [ -f "$(PACKAGE_SDL_DLL)" ]; then cp "$(PACKAGE_SDL_DLL)" "$(DIST_DIR)/$(PACKAGE_NAME)/"; else printf '%s\n' 'error: SDL2.dll was not found for Win32 package; set SDL_PREFIX or SDL_DLL to include it.'; exit 2; fi
 endif
+ifeq ($(TARGET),unix)
 	tar -czf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" -C "$(DIST_DIR)" "$(PACKAGE_NAME)"
 	cd "$(DIST_DIR)" && sha256sum "$(PACKAGE_NAME).tar.gz" > "$(PACKAGE_NAME).tar.gz.sha256"
+endif
 ifeq ($(TARGET),win32)
 	$(ZIP_TOOL) "$(DIST_DIR)/$(PACKAGE_NAME).zip" "$(DIST_DIR)/$(PACKAGE_NAME)" "$(EXE)" "SDL2.dll" "README.md" "HOW_TO_PLAY.md" "WINDOWS.txt" "LICENSE" "PACKAGE.txt"
 	cd "$(DIST_DIR)" && sha256sum "$(PACKAGE_NAME).zip" > "$(PACKAGE_NAME).zip.sha256"
 endif
 
-package-check: package
-	cd "$(DIST_DIR)" && sha256sum -c "$(PACKAGE_NAME).tar.gz.sha256"
 ifeq ($(TARGET),win32)
-	cd "$(DIST_DIR)" && sha256sum -c "$(PACKAGE_NAME).zip.sha256"
-	unzip -t "$(DIST_DIR)/$(PACKAGE_NAME).zip" >/dev/null
+package-installer: package $(WIN32_INSTALLER)
+	cd "$(DIST_DIR)" && sha256sum "$(WIN32_INSTALLER_NAME)" > "$(WIN32_INSTALLER_NAME).sha256"
+else
+package-installer:
+	@printf '%s\n' "package-installer is only available with TARGET=win32"
+	@exit 2
 endif
+
+ifeq ($(TARGET),win32)
+package-installer-check: package-installer
+	cd "$(DIST_DIR)" && sha256sum -c "$(WIN32_INSTALLER_NAME).sha256"
+	test -s "$(WIN32_INSTALLER)"
+	grep -q '101 RCDATA "dist/$(PACKAGE_NAME)/nightshift.exe"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '102 RCDATA "dist/$(PACKAGE_NAME)/SDL2.dll"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '103 RCDATA "dist/$(PACKAGE_NAME)/README.md"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '104 RCDATA "dist/$(PACKAGE_NAME)/HOW_TO_PLAY.md"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '105 RCDATA "dist/$(PACKAGE_NAME)/WINDOWS.txt"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '106 RCDATA "dist/$(PACKAGE_NAME)/LICENSE"' "$(BUILD_DIR)/nightshift-installer.rc"
+	grep -q '107 RCDATA "dist/$(PACKAGE_NAME)/PACKAGE.txt"' "$(BUILD_DIR)/nightshift-installer.rc"
+	strings "$(WIN32_INSTALLER)" | grep -q "Night Shift Setup"
+else
+package-installer-check:
+	@printf '%s\n' "package-installer-check is only available with TARGET=win32"
+	@exit 2
+endif
+
+package-check: package
+ifeq ($(TARGET),unix)
+	cd "$(DIST_DIR)" && sha256sum -c "$(PACKAGE_NAME).tar.gz.sha256"
 	tar -tzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" > /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/$(EXE)$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/README.md$$" /tmp/nightshift-package.lst
@@ -636,7 +658,6 @@ endif
 	grep -q "^Target: $(TARGET)$$" "$$tmp/$(PACKAGE_NAME)/PACKAGE.txt"; \
 	grep -q "^Executable: $(EXE)$$" "$$tmp/$(PACKAGE_NAME)/PACKAGE.txt"; \
 	grep -q "^Runtime: SDL2$$" "$$tmp/$(PACKAGE_NAME)/PACKAGE.txt"
-ifeq ($(TARGET),unix)
 	grep -q "^$(PACKAGE_NAME)/share/applications/nightshift.desktop$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/share/icons/hicolor/scalable/apps/nightshift.svg$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/share/metainfo/nightshift.metainfo.xml$$" /tmp/nightshift-package.lst
@@ -649,8 +670,8 @@ ifeq ($(TARGET),unix)
 	grep -q "<release version=\"$(VERSION)\"" "$$tmp/$(PACKAGE_NAME)/share/metainfo/nightshift.metainfo.xml"
 endif
 ifeq ($(TARGET),win32)
-	grep -q "^$(PACKAGE_NAME)/SDL2.dll$$" /tmp/nightshift-package.lst
-	grep -q "^$(PACKAGE_NAME)/WINDOWS.txt$$" /tmp/nightshift-package.lst
+	cd "$(DIST_DIR)" && sha256sum -c "$(PACKAGE_NAME).zip.sha256"
+	unzip -t "$(DIST_DIR)/$(PACKAGE_NAME).zip" >/dev/null
 	unzip -Z1 "$(DIST_DIR)/$(PACKAGE_NAME).zip" > /tmp/nightshift-package-zip.lst
 	grep -q "^$(EXE)$$" /tmp/nightshift-package-zip.lst
 	grep -q "^SDL2.dll$$" /tmp/nightshift-package-zip.lst
@@ -663,19 +684,19 @@ ifeq ($(TARGET),win32)
 		printf '%s\n' 'zip package contains generated, local state, or temporary files'; \
 		exit 1; \
 	fi
-	tmp=$$(mktemp -d /tmp/nightshift-package.XXXXXX); \
-	trap 'rm -rf "$$tmp"' EXIT; \
-	tar -xzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" -C "$$tmp"; \
-	test -s "$$tmp/$(PACKAGE_NAME)/SDL2.dll"; \
-	test -s "$$tmp/$(PACKAGE_NAME)/WINDOWS.txt"; \
-	grep -q "SDL2.dll" "$$tmp/$(PACKAGE_NAME)/WINDOWS.txt"; \
-	grep -q "nightshift.exe" "$$tmp/$(PACKAGE_NAME)/WINDOWS.txt"
 	tmp=$$(mktemp -d /tmp/nightshift-package-zip.XXXXXX); \
 	trap 'rm -rf "$$tmp"' EXIT; \
 	unzip -q "$(DIST_DIR)/$(PACKAGE_NAME).zip" -d "$$tmp"; \
 	test -x "$$tmp/$(EXE)"; \
 	test -s "$$tmp/SDL2.dll"; \
+	test -s "$$tmp/README.md"; \
+	test -s "$$tmp/HOW_TO_PLAY.md"; \
+	test -s "$$tmp/LICENSE"; \
 	test -s "$$tmp/WINDOWS.txt"; \
+	grep -q "^Version: $(VERSION)$$" "$$tmp/PACKAGE.txt"; \
+	grep -q "^Target: $(TARGET)$$" "$$tmp/PACKAGE.txt"; \
+	grep -q "^Executable: $(EXE)$$" "$$tmp/PACKAGE.txt"; \
+	grep -q "^Runtime: SDL2$$" "$$tmp/PACKAGE.txt"; \
 	grep -q "SDL2.dll" "$$tmp/WINDOWS.txt"; \
 	grep -q "nightshift.exe" "$$tmp/WINDOWS.txt"
 endif
@@ -692,9 +713,6 @@ else ifeq ($(TARGET),win32)
 		MINGW*|MSYS*|CYGWIN*) \
 			set -e; tmp=$$(mktemp -d /tmp/nightshift-package-run.XXXXXX); \
 			trap 'rm -rf "$$tmp"' EXIT; \
-			tar -xzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" -C "$$tmp"; \
-			"$$tmp/$(PACKAGE_NAME)/$(EXE)" --version | grep -q "^Night Shift $(VERSION)$$"; \
-			"$$tmp/$(PACKAGE_NAME)/$(EXE)" --help | grep -q "^Usage:"; \
 			unzip -q "$(DIST_DIR)/$(PACKAGE_NAME).zip" -d "$$tmp/zip"; \
 			"$$tmp/zip/$(EXE)" --version | grep -q "^Night Shift $(VERSION)$$"; \
 			"$$tmp/zip/$(EXE)" --help | grep -q "^Usage:"; \

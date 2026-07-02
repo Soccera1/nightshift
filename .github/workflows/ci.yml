@@ -45,27 +45,29 @@ jobs:
       - name: Verify Win32 artifacts
         run: |
           cd dist
-          sha256sum -c nightshift-*-win32.tar.gz.sha256
           sha256sum -c nightshift-*-win32.zip.sha256
-          tar -tzf nightshift-*-win32.tar.gz | grep -q '/nightshift.exe$'
-          tar -tzf nightshift-*-win32.tar.gz | grep -q '/SDL2.dll$'
+          sha256sum -c nightshift-*-win32-setup.exe.sha256
           unzip -t nightshift-*-win32.zip
           unzip -Z1 nightshift-*-win32.zip | grep -q '^nightshift.exe$'
           unzip -Z1 nightshift-*-win32.zip | grep -q '^SDL2.dll$'
+          test -s nightshift-*-win32-setup.exe
       - name: Native Win32 package run
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $zip = Get-ChildItem dist\nightshift-*-win32.zip | Select-Object -First 1
-          $tar = Get-ChildItem dist\nightshift-*-win32.tar.gz | Select-Object -First 1
+          $setup = Get-ChildItem dist\nightshift-*-win32-setup.exe | Select-Object -First 1
           $zipDir = Join-Path $env:RUNNER_TEMP 'nightshift-zip'
-          $tarDir = Join-Path $env:RUNNER_TEMP 'nightshift-tar'
-          New-Item -ItemType Directory -Force -Path $zipDir, $tarDir | Out-Null
+          $installDir = Join-Path $env:RUNNER_TEMP 'nightshift-installed'
+          New-Item -ItemType Directory -Force -Path $zipDir, $installDir | Out-Null
           Expand-Archive -Path $zip.FullName -DestinationPath $zipDir
-          tar -xzf $tar.FullName -C $tarDir
+          & $setup.FullName /S /NODESKTOP "/D=$installDir"
+          if ($LASTEXITCODE -ne 0) {
+            throw "setup failed"
+          }
           $executables = @(
             (Join-Path $zipDir 'nightshift.exe'),
-            (Get-ChildItem $tarDir -Recurse -Filter nightshift.exe | Select-Object -First 1).FullName
+            (Join-Path $installDir 'nightshift.exe')
           )
           foreach ($exe in $executables) {
             if (-not (Test-Path (Join-Path (Split-Path $exe) 'SDL2.dll'))) {
@@ -84,7 +86,7 @@ jobs:
         with:
           name: nightshift-win32
           path: |
-            dist/nightshift-*-win32.tar.gz
-            dist/nightshift-*-win32.tar.gz.sha256
             dist/nightshift-*-win32.zip
             dist/nightshift-*-win32.zip.sha256
+            dist/nightshift-*-win32-setup.exe
+            dist/nightshift-*-win32-setup.exe.sha256
