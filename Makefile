@@ -16,6 +16,8 @@ CMAKE ?= cmake
 CMAKE_GENERATOR ?= Unix Makefiles
 CMAKE_MAKE_PROGRAM ?= $(shell command -v make 2>/dev/null || command -v gmake 2>/dev/null || printf make)
 SDL2_SUBMODULE ?= vendor/SDL
+SDL2_UNIX_BUILD_DIR ?= build/sdl2-unix-build
+SDL2_UNIX_PREFIX ?= $(abspath build/sdl2-unix)
 SDL2_WIN32_BUILD_DIR ?= build/sdl2-win32-build
 SDL2_WIN32_PREFIX ?= $(abspath build/sdl2-win32)
 VERSION_PARTS := $(subst ., ,$(VERSION))
@@ -93,7 +95,7 @@ C_OBJ := $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(SRC))
 OBJ := $(C_OBJ) $(RES_OBJ)
 DEP := $(C_OBJ:.o=.d)
 
-.PHONY: all clean run smoke render-test audio-test screenshot-test input-test settings-test cli-test simulate help version test sdl2-win32 sdl2-win32-clean win32-vendored-package-check win32-vendored-wine-package-run-check win32-vendored-release-check win32-model-check win32-model-run-check win32-resource-check win32-dry-run win32-package-layout-check win32-wine-package-run-check win32-sdl-probe win32-sdl-probe-check win32-sdl-release-check docs-check ci-check version-check verify release-check clean-release-check metadata-check install install-check uninstall uninstall-check package package-check package-installer package-installer-check package-run-check check-sdl FORCE
+.PHONY: all clean run smoke render-test audio-test screenshot-test input-test settings-test cli-test simulate help version test sdl2-unix sdl2-unix-clean unix-static-sdl-check unix-vendored-release-check sdl2-win32 sdl2-win32-clean win32-vendored-package-check win32-vendored-wine-package-run-check win32-vendored-release-check win32-model-check win32-model-run-check win32-resource-check win32-dry-run win32-package-layout-check win32-wine-package-run-check win32-sdl-probe win32-sdl-probe-check win32-sdl-release-check docs-check ci-check version-check verify release-check clean-release-check metadata-check install install-check uninstall uninstall-check package package-check package-installer package-installer-check package-run-check check-sdl FORCE
 
 all: $(EXE)
 
@@ -240,6 +242,40 @@ version: $(EXE)
 
 test: $(TEST_BIN)
 	./$(TEST_BIN)
+
+sdl2-unix:
+	@if [ ! -f "$(SDL2_SUBMODULE)/CMakeLists.txt" ]; then \
+		printf '%s\n' 'SDL2 submodule is missing. Run: git submodule update --init vendor/SDL'; \
+		exit 2; \
+	fi
+	$(CMAKE) -S "$(SDL2_SUBMODULE)" -B "$(SDL2_UNIX_BUILD_DIR)" -G "$(CMAKE_GENERATOR)" \
+		-DCMAKE_MAKE_PROGRAM="$(CMAKE_MAKE_PROGRAM)" \
+		-DCMAKE_INSTALL_PREFIX="$(SDL2_UNIX_PREFIX)" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DSDL_SHARED=OFF \
+		-DSDL_STATIC=ON \
+		-DSDL_TEST=OFF \
+		-DSDL_TESTS=OFF \
+		-DSDL_INSTALL_TESTS=OFF
+	$(CMAKE) --build "$(SDL2_UNIX_BUILD_DIR)" --target install
+	test -s "$(SDL2_UNIX_PREFIX)/lib/libSDL2.a" || test -s "$(SDL2_UNIX_PREFIX)/lib64/libSDL2.a"
+	test -x "$(SDL2_UNIX_PREFIX)/bin/sdl2-config"
+	printf '%s\n' "sdl2_unix=pass prefix=$(SDL2_UNIX_PREFIX)"
+
+sdl2-unix-clean:
+	rm -rf "$(SDL2_UNIX_BUILD_DIR)" "$(SDL2_UNIX_PREFIX)"
+
+unix-static-sdl-check: $(EXE)
+	@if command -v ldd >/dev/null 2>&1 && ldd "$(EXE)" 2>/dev/null | grep -q 'libSDL2[.]so'; then \
+		ldd "$(EXE)"; \
+		printf '%s\n' 'UNIX executable is dynamically linked to SDL2'; \
+		exit 1; \
+	fi
+	@printf '%s\n' "unix_static_sdl=pass exe=$(EXE)"
+
+unix-vendored-release-check: sdl2-unix
+	rm -f "$(BIN)" build/unix/*.o build/unix/*.d
+	$(MAKE) TARGET=unix SDL_CFLAGS="$$("$(SDL2_UNIX_PREFIX)/bin/sdl2-config" --cflags)" SDL_LIBS="$$("$(SDL2_UNIX_PREFIX)/bin/sdl2-config" --static-libs)" release-check unix-static-sdl-check
 
 sdl2-win32:
 	@if [ ! -f "$(SDL2_SUBMODULE)/CMakeLists.txt" ]; then \
@@ -456,7 +492,7 @@ docs-check:
 	grep -q "nightshift.exe" packaging/WINDOWS.txt
 
 ci-check:
-	grep -q "make release-check" .github/workflows/ci.yml
+	grep -q "make unix-vendored-release-check" .github/workflows/ci.yml
 	grep -q "submodules: true" .github/workflows/ci.yml
 	grep -q "make libsdl2-dev" .github/workflows/ci.yml
 	grep -q "g++-mingw-w64-x86-64" .github/workflows/ci.yml
