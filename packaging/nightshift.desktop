@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Night Shift
+Comment=Survive a haunted security shift
+Exec=nightshift
+Icon=nightshift
+Terminal=false
+Categories=Game;
+StartupNotify=false
+

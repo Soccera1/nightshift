@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libsdl2-dev gcc-mingw-w64-x86-64 cmake ninja-build
+      - name: Release check
+        run: make release-check
+      - name: Vendored Win32 SDL package check
+        run: make win32-vendored-package-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightshift-unix
+          path: |
+            dist/nightshift-*-unix.tar.gz
+            dist/nightshift-*-unix.tar.gz.sha256
+
+  win32:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-SDL2
+      - name: Win32 SDL release check
+        run: make WIN32_CC=gcc WIN32_PKG_CONFIG=pkg-config win32-sdl-release-check
+      - name: Verify Win32 artifacts
+        run: |
+          cd dist
+          sha256sum -c nightshift-*-win32.tar.gz.sha256
+          sha256sum -c nightshift-*-win32.zip.sha256
+          tar -tzf nightshift-*-win32.tar.gz | grep -q '/nightshift.exe$'
+          tar -tzf nightshift-*-win32.tar.gz | grep -q '/SDL2.dll$'
+          unzip -t nightshift-*-win32.zip
+          unzip -Z1 nightshift-*-win32.zip | grep -q '^nightshift.exe$'
+          unzip -Z1 nightshift-*-win32.zip | grep -q '^SDL2.dll$'
+      - name: Native Win32 package run
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem dist\nightshift-*-win32.zip | Select-Object -First 1
+          $tar = Get-ChildItem dist\nightshift-*-win32.tar.gz | Select-Object -First 1
+          $zipDir = Join-Path $env:RUNNER_TEMP 'nightshift-zip'
+          $tarDir = Join-Path $env:RUNNER_TEMP 'nightshift-tar'
+          New-Item -ItemType Directory -Force -Path $zipDir, $tarDir | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $zipDir
+          tar -xzf $tar.FullName -C $tarDir
+          $executables = @(
+            (Join-Path $zipDir 'nightshift.exe'),
+            (Get-ChildItem $tarDir -Recurse -Filter nightshift.exe | Select-Object -First 1).FullName
+          )
+          foreach ($exe in $executables) {
+            if (-not (Test-Path (Join-Path (Split-Path $exe) 'SDL2.dll'))) {
+              throw "SDL2.dll missing beside $exe"
+            }
+            $version = & $exe --version
+            if ($LASTEXITCODE -ne 0 -or $version -ne 'Night Shift 0.1.0') {
+              throw "version check failed for $exe"
+            }
+            $help = & $exe --help
+            if ($LASTEXITCODE -ne 0 -or -not ($help | Select-String '^Usage:')) {
+              throw "help check failed for $exe"
+            }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightshift-win32
+          path: |
+            dist/nightshift-*-win32.tar.gz
+            dist/nightshift-*-win32.tar.gz.sha256
+            dist/nightshift-*-win32.zip
+            dist/nightshift-*-win32.zip.sha256

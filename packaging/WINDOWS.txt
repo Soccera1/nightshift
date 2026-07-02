@@ -1,0 +1,15 @@
+Night Shift for Win32
+
+Run nightshift.exe from this folder.
+
+Keep SDL2.dll beside nightshift.exe. The game uses SDL's per-user preference
+directory for save and settings files when available, and falls back to
+nightshift.save and nightshift.cfg in the current folder if that path cannot be
+created.
+
+Useful command-line checks:
+
+  nightshift.exe --help
+  nightshift.exe --version
+  nightshift.exe --settings=portable.cfg --save=portable.save
+
