@@ -1,6 +1,6 @@
 # Night Shift
 
-A small FNAF-inspired fangame written in C23 with SDL2. It targets UNIX-like systems and Win32, uses primitive procedural rendering and audio, and ships without external runtime assets.
+A small FNAF-inspired fangame written in C23 with SDL2. It targets UNIX-like systems and Win32, uses bundled scene art with procedural UI/effects and audio, and keeps SDL2 as the only runtime library dependency.
 
 Night Shift is an unofficial fan work and is not affiliated with or endorsed by the creators or owners of Five Nights at Freddy's.
 

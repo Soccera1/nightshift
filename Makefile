@@ -28,6 +28,7 @@ VERSION_COMMA := $(VERSION_MAJOR),$(VERSION_MINOR),$(VERSION_PATCH),0
 BUILD_DIR := build/$(TARGET)
 BIN := nightshift
 SRC := src/main.c src/game.c src/audio.c
+ASSETS := assets/title.dat assets/office.dat assets/camera-stage.dat assets/camera-dining.dat assets/camera-hall.dat assets/camera-backstage.dat assets/camera-vent.dat assets/characters.dat
 TEST_BIN := build/test_game
 WIN32_MODEL_BIN := build/test_game-win32.exe
 ICON_TOOL := build/make_ico
@@ -176,7 +177,7 @@ screenshot-test: $(EXE) $(BMP_CHECKER)
 	$(BMP_CHECKER) /tmp/nightshift-screenshot.bmp
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./$(EXE) --custom-night=20,20,20,20 --screenshot-scene=title --screenshot=/tmp/nightshift-custom-title.bmp --save=/tmp/nightshift-custom-shot.save --settings=/tmp/nightshift-custom-shot.cfg
 	$(BMP_CHECKER) /tmp/nightshift-custom-title.bmp
-	set -e; for scene in title title-cleared extras office camera win loss-rust loss-volt loss-skitr loss-echo blackout; do \
+	set -e; for scene in title title-cleared extras office camera camera-stage camera-dining camera-hall camera-backstage win loss-rust loss-volt loss-skitr loss-echo blackout; do \
 		env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./$(EXE) --screenshot-scene=$$scene --screenshot=/tmp/nightshift-$$scene.bmp --save=/tmp/nightshift-$$scene.save --settings=/tmp/nightshift-$$scene.cfg; \
 		$(BMP_CHECKER) /tmp/nightshift-$$scene.bmp; \
 	done
@@ -551,9 +552,10 @@ metadata-check: $(BUILD_DIR)/nightshift.rc $(METAINFO)
 	grep -q '<longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>' "$(BUILD_DIR)/nightshift.manifest"
 	@if grep -q '@VERSION@\|@MANIFEST@\|@ICON@' "$(BUILD_DIR)/nightshift.rc" "$(BUILD_DIR)/nightshift.manifest"; then printf '%s\n' 'unexpanded placeholder in generated Win32 resources'; exit 1; fi
 
-install: $(EXE) $(METAINFO)
-	mkdir -p "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(DOCDIR)"
+install: $(EXE) $(METAINFO) $(ASSETS)
+	mkdir -p "$(DESTDIR)$(BINDIR)" "$(DESTDIR)$(BINDIR)/assets" "$(DESTDIR)$(DOCDIR)"
 	cp "$(EXE)" "$(DESTDIR)$(BINDIR)/$(EXE)"
+	cp $(ASSETS) "$(DESTDIR)$(BINDIR)/assets/"
 	cp README.md "$(DESTDIR)$(DOCDIR)/README.md"
 	cp HOW_TO_PLAY.md "$(DESTDIR)$(DOCDIR)/HOW_TO_PLAY.md"
 	cp LICENSE "$(DESTDIR)$(DOCDIR)/LICENSE"
@@ -573,6 +575,8 @@ install-check: $(EXE)
 	trap 'rm -rf "$$tmp"' EXIT; \
 	$(MAKE) install DESTDIR="$$tmp/root" PREFIX=/usr; \
 	test -x "$$tmp/root/usr/bin/$(EXE)"; \
+	test -f "$$tmp/root/usr/bin/assets/title.dat"; \
+	test -f "$$tmp/root/usr/bin/assets/characters.dat"; \
 	test -f "$$tmp/root/usr/share/doc/$(BIN)/README.md"; \
 	test -f "$$tmp/root/usr/share/doc/$(BIN)/HOW_TO_PLAY.md"; \
 	test -f "$$tmp/root/usr/share/doc/$(BIN)/LICENSE"; \
@@ -590,6 +594,8 @@ install-check: $(EXE)
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/$(EXE)"
+	rm -f "$(DESTDIR)$(BINDIR)/assets/title.dat" "$(DESTDIR)$(BINDIR)/assets/office.dat" "$(DESTDIR)$(BINDIR)/assets/camera-stage.dat" "$(DESTDIR)$(BINDIR)/assets/camera-dining.dat" "$(DESTDIR)$(BINDIR)/assets/camera-hall.dat" "$(DESTDIR)$(BINDIR)/assets/camera-backstage.dat" "$(DESTDIR)$(BINDIR)/assets/camera-vent.dat" "$(DESTDIR)$(BINDIR)/assets/characters.dat"
+	rmdir "$(DESTDIR)$(BINDIR)/assets" 2>/dev/null || true
 ifeq ($(TARGET),win32)
 	rm -f "$(DESTDIR)$(BINDIR)/SDL2.dll"
 	rm -f "$(DESTDIR)$(DOCDIR)/WINDOWS.txt"
@@ -610,6 +616,7 @@ uninstall-check: $(EXE)
 	$(MAKE) install DESTDIR="$$tmp/root" PREFIX=/usr; \
 	$(MAKE) uninstall DESTDIR="$$tmp/root" PREFIX=/usr; \
 	test ! -e "$$tmp/root/usr/bin/$(EXE)"; \
+	test ! -e "$$tmp/root/usr/bin/assets/title.dat"; \
 	if [ "$(TARGET)" = "win32" ]; then \
 		test ! -e "$$tmp/root/usr/bin/SDL2.dll"; \
 	fi; \
@@ -625,16 +632,18 @@ uninstall-check: $(EXE)
 		test ! -e "$$tmp/root/usr/share/metainfo/nightshift.metainfo.xml"; \
 	fi
 
-package: $(EXE) $(METAINFO) $(PACKAGE_DEPS)
+package: $(EXE) $(METAINFO) $(PACKAGE_DEPS) $(ASSETS)
 	rm -rf "$(DIST_DIR)/$(PACKAGE_NAME)" "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz.sha256" "$(DIST_DIR)/$(PACKAGE_NAME).zip" "$(DIST_DIR)/$(PACKAGE_NAME).zip.sha256"
-	mkdir -p "$(DIST_DIR)/$(PACKAGE_NAME)"
+	mkdir -p "$(DIST_DIR)/$(PACKAGE_NAME)" "$(DIST_DIR)/$(PACKAGE_NAME)/assets"
 	cp "$(EXE)" README.md HOW_TO_PLAY.md LICENSE "$(DIST_DIR)/$(PACKAGE_NAME)/"
+	cp $(ASSETS) "$(DIST_DIR)/$(PACKAGE_NAME)/assets/"
 	printf '%s\n' \
 		"Name: Night Shift" \
 		"Version: $(VERSION)" \
 		"Target: $(TARGET)" \
 		"Executable: $(EXE)" \
 		"Runtime: SDL2" \
+		"Assets: $(ASSETS)" \
 		"Docs: README.md HOW_TO_PLAY.md LICENSE" \
 		"Package: $(PACKAGE_NAME)" > "$(DIST_DIR)/$(PACKAGE_NAME)/PACKAGE.txt"
 ifeq ($(TARGET),unix)
@@ -652,7 +661,7 @@ ifeq ($(TARGET),unix)
 	cd "$(DIST_DIR)" && sha256sum "$(PACKAGE_NAME).tar.gz" > "$(PACKAGE_NAME).tar.gz.sha256"
 endif
 ifeq ($(TARGET),win32)
-	$(ZIP_TOOL) "$(DIST_DIR)/$(PACKAGE_NAME).zip" "$(DIST_DIR)/$(PACKAGE_NAME)" "$(EXE)" "SDL2.dll" "README.md" "HOW_TO_PLAY.md" "WINDOWS.txt" "LICENSE" "PACKAGE.txt"
+	$(ZIP_TOOL) "$(DIST_DIR)/$(PACKAGE_NAME).zip" "$(DIST_DIR)/$(PACKAGE_NAME)" "$(EXE)" "SDL2.dll" "README.md" "HOW_TO_PLAY.md" "WINDOWS.txt" "LICENSE" "PACKAGE.txt" "assets/title.dat" "assets/office.dat" "assets/camera-stage.dat" "assets/camera-dining.dat" "assets/camera-hall.dat" "assets/camera-backstage.dat" "assets/camera-vent.dat" "assets/characters.dat"
 	cd "$(DIST_DIR)" && sha256sum "$(PACKAGE_NAME).zip" > "$(PACKAGE_NAME).zip.sha256"
 endif
 
@@ -688,6 +697,14 @@ ifeq ($(TARGET),unix)
 	cd "$(DIST_DIR)" && sha256sum -c "$(PACKAGE_NAME).tar.gz.sha256"
 	tar -tzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" > /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/$(EXE)$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/title.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/office.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/camera-stage.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/camera-dining.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/camera-hall.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/camera-backstage.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/camera-vent.dat$$" /tmp/nightshift-package.lst
+	grep -q "^$(PACKAGE_NAME)/assets/characters.dat$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/README.md$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/HOW_TO_PLAY.md$$" /tmp/nightshift-package.lst
 	grep -q "^$(PACKAGE_NAME)/LICENSE$$" /tmp/nightshift-package.lst
@@ -700,6 +717,8 @@ ifeq ($(TARGET),unix)
 	trap 'rm -rf "$$tmp"' EXIT; \
 	tar -xzf "$(DIST_DIR)/$(PACKAGE_NAME).tar.gz" -C "$$tmp"; \
 	test -x "$$tmp/$(PACKAGE_NAME)/$(EXE)"; \
+	test -s "$$tmp/$(PACKAGE_NAME)/assets/title.dat"; \
+	test -s "$$tmp/$(PACKAGE_NAME)/assets/characters.dat"; \
 	test -s "$$tmp/$(PACKAGE_NAME)/README.md"; \
 	test -s "$$tmp/$(PACKAGE_NAME)/HOW_TO_PLAY.md"; \
 	test -s "$$tmp/$(PACKAGE_NAME)/LICENSE"; \
@@ -729,6 +748,14 @@ ifeq ($(TARGET),win32)
 	grep -q "^WINDOWS.txt$$" /tmp/nightshift-package-zip.lst
 	grep -q "^LICENSE$$" /tmp/nightshift-package-zip.lst
 	grep -q "^PACKAGE.txt$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/title.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/office.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/camera-stage.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/camera-dining.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/camera-hall.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/camera-backstage.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/camera-vent.dat$$" /tmp/nightshift-package-zip.lst
+	grep -q "^assets/characters.dat$$" /tmp/nightshift-package-zip.lst
 	@if grep -Eq '(^|/)(build|dist)/|\.tmp$$|\.save$$|\.cfg$$|\.bmp$$|\.o$$|\.res$$|\.res\.o$$' /tmp/nightshift-package-zip.lst; then \
 		printf '%s\n' 'zip package contains generated, local state, or temporary files'; \
 		exit 1; \
@@ -738,6 +765,8 @@ ifeq ($(TARGET),win32)
 	unzip -q "$(DIST_DIR)/$(PACKAGE_NAME).zip" -d "$$tmp"; \
 	test -x "$$tmp/$(EXE)"; \
 	test -s "$$tmp/SDL2.dll"; \
+	test -s "$$tmp/assets/title.dat"; \
+	test -s "$$tmp/assets/characters.dat"; \
 	test -s "$$tmp/README.md"; \
 	test -s "$$tmp/HOW_TO_PLAY.md"; \
 	test -s "$$tmp/LICENSE"; \
