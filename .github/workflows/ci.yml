@@ -12,7 +12,7 @@ jobs:
         with:
           submodules: true
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential libsdl2-dev gcc-mingw-w64-x86-64 cmake ninja-build
+        run: sudo apt-get update && sudo apt-get install -y build-essential make libsdl2-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 cmake unzip
       - name: Release check
         run: make release-check
       - name: Vendored Win32 SDL package check
@@ -40,6 +40,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-SDL2
+            unzip
       - name: Win32 SDL release check
         run: make WIN32_CC=gcc WIN32_PKG_CONFIG=pkg-config win32-sdl-release-check
       - name: Verify Win32 artifacts
@@ -61,25 +62,40 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'nightshift-installed'
           New-Item -ItemType Directory -Force -Path $zipDir, $installDir | Out-Null
           Expand-Archive -Path $zip.FullName -DestinationPath $zipDir
-          & $setup.FullName /S /NODESKTOP "/D=$installDir"
-          if ($LASTEXITCODE -ne 0) {
-            throw "setup failed"
+          $setupProcess = Start-Process -FilePath $setup.FullName -ArgumentList @('/S', '/NODESKTOP', "/D=$installDir") -Wait -PassThru
+          if ($null -ne $setupProcess.ExitCode -and $setupProcess.ExitCode -ne 0) {
+            Get-ChildItem -Force $installDir -ErrorAction SilentlyContinue | Format-List
+            throw "setup failed with exit code $($setupProcess.ExitCode)"
+          }
+          if (-not (Test-Path (Join-Path $installDir 'nightshift.exe'))) {
+            Get-ChildItem -Force $installDir -ErrorAction SilentlyContinue | Format-List
+            throw "setup did not install nightshift.exe"
           }
           $executables = @(
             (Join-Path $zipDir 'nightshift.exe'),
             (Join-Path $installDir 'nightshift.exe')
           )
           foreach ($exe in $executables) {
-            if (-not (Test-Path (Join-Path (Split-Path $exe) 'SDL2.dll'))) {
+            $exeDir = Split-Path $exe
+            $exeName = Split-Path -Leaf $exe
+            if (-not (Test-Path (Join-Path $exeDir 'SDL2.dll'))) {
               throw "SDL2.dll missing beside $exe"
             }
-            $version = & $exe --version
-            if ($LASTEXITCODE -ne 0 -or $version -ne 'Night Shift 0.1.0') {
-              throw "version check failed for $exe"
-            }
-            $help = & $exe --help
-            if ($LASTEXITCODE -ne 0 -or -not ($help | Select-String '^Usage:')) {
-              throw "help check failed for $exe"
+            Push-Location $exeDir
+            try {
+              $version = (& ".\$exeName" --version 2>&1 | Out-String).Trim()
+              $versionExitCode = $LASTEXITCODE
+              $versionLines = $version -split '\r?\n' | ForEach-Object { $_.Trim() }
+              if ($versionExitCode -ne 0 -or $versionLines -notcontains 'Night Shift 0.1.0') {
+                throw "version check failed for $exe exit=$versionExitCode output=[$version]"
+              }
+              $help = (& ".\$exeName" --help 2>&1 | Out-String).Trim()
+              $helpExitCode = $LASTEXITCODE
+              if ($helpExitCode -ne 0 -or $help -notmatch '(?m)^Usage:') {
+                throw "help check failed for $exe exit=$helpExitCode output=[$help]"
+              }
+            } finally {
+              Pop-Location
             }
           }
       - uses: actions/upload-artifact@v4

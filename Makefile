@@ -6,11 +6,15 @@ TARGET ?= unix
 VERSION ?= 0.1.0
 WIN32_CC ?= x86_64-w64-mingw32-gcc
 WIN32_CC_PATH ?= $(shell command -v "$(WIN32_CC)" 2>/dev/null || printf '%s' "$(WIN32_CC)")
+WIN32_CXX ?= $(if $(filter %-gcc,$(WIN32_CC)),$(patsubst %-gcc,%-g++,$(WIN32_CC)),x86_64-w64-mingw32-g++)
+WIN32_CXX_PATH ?= $(shell command -v "$(WIN32_CXX)" 2>/dev/null || printf '%s' "$(WIN32_CXX)")
 WIN32_WINDRES ?= $(if $(filter %-gcc,$(WIN32_CC)),$(patsubst %-gcc,%-windres,$(WIN32_CC)),windres)
 WIN32_OBJDUMP ?= $(if $(filter %-gcc,$(WIN32_CC)),$(patsubst %-gcc,%-objdump,$(WIN32_CC)),objdump)
 WINE ?= wine
 WINEPREFIX_DIR ?= $(abspath build/wineprefix)
 CMAKE ?= cmake
+CMAKE_GENERATOR ?= Unix Makefiles
+CMAKE_MAKE_PROGRAM ?= $(shell command -v make 2>/dev/null || command -v gmake 2>/dev/null || printf make)
 SDL2_SUBMODULE ?= vendor/SDL
 SDL2_WIN32_BUILD_DIR ?= build/sdl2-win32-build
 SDL2_WIN32_PREFIX ?= $(abspath build/sdl2-win32)
@@ -141,7 +145,7 @@ $(BUILD_DIR)/nightshift-installer.res.o: $(BUILD_DIR)/nightshift-installer.rc pa
 	$(WINDRES) -O coff -o $@ $<
 
 $(WIN32_INSTALLER): tools/nightshift_installer.c $(BUILD_DIR)/nightshift-installer.res.o FORCE | $(DIST_DIR)
-	$(CC) -DNIGHTSHIFT_VERSION=\"$(VERSION)\" $(CFLAGS) -std=$(CSTD) $(WARNINGS) -o $@ tools/nightshift_installer.c $(BUILD_DIR)/nightshift-installer.res.o -mwindows -lshell32 -lole32 -luuid
+	$(CC) -DNIGHTSHIFT_VERSION=\"$(VERSION)\" $(CFLAGS) -std=$(CSTD) $(WARNINGS) -o $@ tools/nightshift_installer.c $(BUILD_DIR)/nightshift-installer.res.o -mwindows -static -static-libgcc -lshell32 -lole32 -luuid
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -242,9 +246,11 @@ sdl2-win32:
 		printf '%s\n' 'SDL2 submodule is missing. Run: git submodule update --init vendor/SDL'; \
 		exit 2; \
 	fi
-	$(CMAKE) -S "$(SDL2_SUBMODULE)" -B "$(SDL2_WIN32_BUILD_DIR)" -G Ninja \
+	$(CMAKE) -S "$(SDL2_SUBMODULE)" -B "$(SDL2_WIN32_BUILD_DIR)" -G "$(CMAKE_GENERATOR)" \
 		-DCMAKE_TOOLCHAIN_FILE="$(abspath $(SDL2_SUBMODULE))/build-scripts/cmake-toolchain-mingw64-x86_64.cmake" \
 		-DCMAKE_C_COMPILER="$(WIN32_CC_PATH)" \
+		-DCMAKE_CXX_COMPILER="$(WIN32_CXX_PATH)" \
+		-DCMAKE_MAKE_PROGRAM="$(CMAKE_MAKE_PROGRAM)" \
 		-DCMAKE_INSTALL_PREFIX="$(SDL2_WIN32_PREFIX)" \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DSDL_SHARED=ON \
@@ -452,7 +458,9 @@ docs-check:
 ci-check:
 	grep -q "make release-check" .github/workflows/ci.yml
 	grep -q "submodules: true" .github/workflows/ci.yml
-	grep -q "cmake ninja-build" .github/workflows/ci.yml
+	grep -q "make libsdl2-dev" .github/workflows/ci.yml
+	grep -q "g++-mingw-w64-x86-64" .github/workflows/ci.yml
+	grep -q "cmake unzip" .github/workflows/ci.yml
 	grep -q "make win32-vendored-package-check" .github/workflows/ci.yml
 	grep -q "make WIN32_CC=gcc WIN32_PKG_CONFIG=pkg-config win32-sdl-release-check" .github/workflows/ci.yml
 	grep -q "actions/upload-artifact@v4" .github/workflows/ci.yml
@@ -466,7 +474,12 @@ ci-check:
 	grep -q "unzip -Z1 nightshift-\\*-win32.zip" .github/workflows/ci.yml
 	@if grep -Eq "win32.*tar[.]gz" .github/workflows/ci.yml; then printf '%s\n' 'CI should not publish Win32 tarballs'; exit 1; fi
 	grep -q "Native Win32 package run" .github/workflows/ci.yml
+	grep -q "Start-Process" .github/workflows/ci.yml
 	grep -q "Expand-Archive" .github/workflows/ci.yml
+	grep -q "Push-Location" .github/workflows/ci.yml
+	grep -q "version check failed.*exit=.*output=" .github/workflows/ci.yml
+	grep -q "versionLines.*notcontains" .github/workflows/ci.yml
+	grep -q "(?m)^Usage:" .github/workflows/ci.yml
 	grep -q "Night Shift 0.1.0" .github/workflows/ci.yml
 
 version-check:

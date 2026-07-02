@@ -374,7 +374,9 @@ static bool make_directory_tree(const char *path)
         if (*p == '\\' || *p == '/') {
             char saved = *p;
             *p = '\0';
-            if (partial[0] != '\0' && partial[1] != ':') {
+            size_t partial_len = strlen(partial);
+            bool drive_root = partial_len == 2 && partial[1] == ':';
+            if (partial[0] != '\0' && !drive_root) {
                 if (!CreateDirectoryA(partial, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
                     return false;
                 }
